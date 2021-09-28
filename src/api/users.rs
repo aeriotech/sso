@@ -127,31 +127,33 @@ async fn new_form(conn: UsersDBConnection, input: Form<UserIn>) -> Redirect {
 
     match status {
         0 => Redirect::to(uri!("/")),
-        1 => Redirect::to(uri!("/login?errorCode=1")),
-        _ => Redirect::to(uri!("/login?errorCode=2"))
+        1 => Redirect::to(uri!("/login?error_code=1")),
+        _ => Redirect::to(uri!("/login?error_code=2"))
     }
 }
 
-#[post("/new", format = "json", data = "<input>", rank = 1)]
-async fn login(conn: UsersDBConnection, input: Json<UserIn>) -> &'static str {
+#[post("/login", format = "json", data = "<input>", rank = 1)]
+async fn login(conn: UsersDBConnection, input: Json<UserIn>) -> String {
     let user = input.into_inner();
     if user.username.is_none() || user.password.is_none() {
-        return "401; invalid username or password";
+        return String::from("401; invalid username or password");
     }
     let status = conn.run(|c| get_access_token(c, &user.username.unwrap(), &user.password.unwrap())).await;
 
     if status.is_err() {
         return match status.err() {
-            Some(1) => "401; invalid username or password",
-            _ => "500; internal server error"
+            Some(1) => String::from("401; invalid username or password"),
+            _ => String::from("500; internal server error")
         }
-    }else{ 
-
+    }else{
+        let token = status.ok();
+        let token_str = String::from_utf8(token.unwrap()).unwrap();
+        return token_str;
     }
 }
 
 pub fn stage() -> rocket::fairing::AdHoc {
     rocket::fairing::AdHoc::on_ignite("Users", |rocket| async {
-        rocket.mount("/api/users", routes![get, new, new_form]).attach(UsersDBConnection::fairing())
+        rocket.mount("/api/users", routes![get, new, new_form, login]).attach(UsersDBConnection::fairing())
     })
 }

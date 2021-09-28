@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use rocket_dyn_templates::{Template};
 
-#[get("/?<errorCode..>", rank = 1)]
-fn login(errorCode: u8) -> Template{
+#[get("/?<error_code..>", rank = 1)]
+fn login(error_code: u8) -> Template{
     let mut context = HashMap::new();
 
-    let message = match errorCode {
+    let message = match error_code {
         0 => "",
         1 => "Username taken",
         _ => "Internal server error, please try again later."
