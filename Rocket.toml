@@ -1,6 +1,5 @@
 [global.databases.users_db]
-url = "postgresql://quartzy:dbpass@localhost:5432/users"
+url = "postgresql://hermione:404notfound@192.168.0.24:8203/sso"
 
 [default]
-template_dir = "templates"
 secret_key = "dTg/yjfhuiGN/H/xYz55vT1VOhGKfULpO3vjzt8aND4="

@@ -59,9 +59,17 @@ struct AuthenticationResponse{
     access_token: Option<String>,
     refresh_token: Option<String>,
     expiration: Option<u64>,
-    error_code: Option<u16>,
+    status_code: Option<u16>,
     error: Option<String>,
     success: bool
+}
+
+#[derive(Serialize, Deserialize, FromForm)]
+#[serde(crate = "rocket::serde")]
+struct TestRequest{
+    user_id: Option<String>,
+    access_token: Option<String>,
+    client_id: Option<String>
 }
 
 fn random_bytes() -> String {
@@ -132,7 +140,7 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
             refresh_token: None,
             expiration: None,
             success: false,
-            error_code: Some(401),
+            status_code: Some(401),
             error: Some(String::from("401; invalid credentials")),
         };
     }
@@ -142,14 +150,16 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
     let password: String = user_info_raw.get(0);
     let user_id: String = user_info_raw.get(1);
 
-    let client_info = conn.query_one("SELECT client_secret FROM clients WHERE client_id = $1", &[&request.client_id]);
+    let client_id: &String = request.client_id.as_ref().unwrap();
+
+    let client_info = conn.query_one("SELECT client_secret FROM clients WHERE client_id = $1", &[client_id]);
     if client_info.is_err() {
         return AuthenticationResponse{
             access_token: None,
             refresh_token: None,
             expiration: None,
             success: false,
-            error_code: Some(500),
+            status_code: Some(500),
             error: Some(String::from("500; internal server error")),
         };
     }
@@ -162,7 +172,7 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
             refresh_token: None,
             expiration: None,
             success: false,
-            error_code: Some(401),
+            status_code: Some(401),
             error: Some(String::from("401; invalid credentials")),
         };
     }
@@ -178,17 +188,20 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
         let seconds_since: String = (since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION).to_string();
 
         // !TODO: Query parameters don't work inside DO statements. Maybe try temporary variales https://stackoverflow.com/questions/18811265/sql-creating-temporary-variables
-        let rows_updated = conn.execute(
-            "DO
-            $do$
-            BEGIN
-               IF EXISTS (SELECT FROM tokens WHERE user_id=:1 AND client_id=:2) THEN
-                  UPDATE tokens SET access_token=:3, access_token_expire=:5 WHERE user_id=:1 AND client_id=:2;
-               ELSE
-                  INSERT INTO tokens VALUES (:2, :1, :3, :4, :5);
-               END IF;
-            END
-            $do$", &[&user_id, &request.client_id, &access_token, &refresh_token, &seconds_since]);
+        
+        let query: &String = &(String::from("DO
+        $do$
+        BEGIN
+           IF EXISTS (SELECT FROM tokens WHERE user_id='") + &user_id + &String::from("' AND client_id='") + client_id + &String::from("') THEN
+           UPDATE tokens SET access_token='") + &access_token + &String::from("', access_token_expire='") + &seconds_since + &String::from("' WHERE user_id='") +
+        &user_id + &String::from("' AND client_id='") + client_id + &String::from("';
+        ELSE
+           INSERT INTO tokens VALUES ('") + &user_id + &String::from("', '") + client_id + &String::from("', '") + &access_token + &String::from("', '") + &seconds_since + &String::from("', '") + &refresh_token + &String::from("');
+           END IF;
+        END
+        $do$"));
+        
+        let rows_updated = conn.execute(query.as_str(), &[]);
 
         if rows_updated.is_err() {
             return AuthenticationResponse{
@@ -196,44 +209,33 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                 refresh_token: None,
                 expiration: None,
                 success: false,
-                error_code: Some(500),
+                status_code: Some(500),
                 error: Some(String::from("500; internal server error")),
             };
         }
 
-        if rows_updated.unwrap() == 1{
-            return AuthenticationResponse{
-                access_token: Some(access_token),
-                refresh_token: Some(refresh_token),
-                expiration: Some(since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION),
-                error: None,
-                error_code: None,
-                success: true,
-            };
-        }else{ 
-            return AuthenticationResponse{
-                access_token: None,
-                refresh_token: None,
-                expiration: None,
-                success: false,
-                error_code: Some(500),
-                error: Some(String::from("500; internal server error")),
-            };
-        }
+        return AuthenticationResponse{
+            access_token: Some(access_token),
+            refresh_token: Some(refresh_token),
+            expiration: Some(since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION),
+            error: None,
+            status_code: Some(201),
+            success: true,
+        };
     }else{ 
         return AuthenticationResponse{
             access_token: None,
             refresh_token: None,
             expiration: None,
             success: false,
-            error_code: Some(401),
+            status_code: Some(401),
             error: Some(String::from("401; invalid credentials")),
         };
     }
 }
 
 fn is_user_authentcated(conn: &mut postgres::Client, access_token: &String, client_id: &String, user_id: &String) -> (u16, String){
-    let response_raw = conn.query_one("SELECT (access_token_expire) FROM tokens WHERE access_token=$1 AND client_id=$2 AND user_id=$3", &[access_token, client_id, user_id]);
+    let response_raw = conn.query_one("SELECT access_token_expire FROM tokens WHERE access_token=$1 AND client_id=$2 AND user_id=$3", &[access_token, client_id, user_id]);
 
     if response_raw.is_err() {
         return (401, String::from("{\"success\": false, \"error_code\": 401, \"error\": \"Invalid credentials\"}"));
@@ -244,14 +246,12 @@ fn is_user_authentcated(conn: &mut postgres::Client, access_token: &String, clie
     let since_the_epoch = start
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
-    let expire_time_str: String = response.get(4);
-    let expire_time = expire_time_str.parse::<u64>();
+    let expire_time: i64 = response.get(0);
 
-    if expire_time.is_err(){
-        return (401, String::from("{\"success\": false, \"error_code\": 500, \"error\": \"Internal server error\"}"));
-    }
+    let mut expire_as_u: u64 = 0;
+    expire_as_u = expire_as_u.wrapping_add(expire_time as u64);
 
-    if expire_time.unwrap() < since_the_epoch.as_secs(){
+    if expire_as_u < since_the_epoch.as_secs(){
         return (401, String::from("{\"success\": false, \"error_code\": 401, \"error\": \"Token expired\"}"));
     }else{
         return (200, String::from("{\"success\": true}"))
@@ -305,7 +305,7 @@ async fn authenticate(conn: UsersDBConnection, input: Json<AuthenticationRequest
         }).await;
 
         let res_json: String = rocket::serde::json::serde_json::to_string_pretty(&res).unwrap();
-        return (Status::from_code(res.error_code.unwrap()).unwrap(), (ContentType::JSON, res_json));
+        return (Status::from_code(res.status_code.unwrap()).unwrap(), (ContentType::JSON, res_json));
     }else if response_type == "refresh"{
         return (Status::NotImplemented, (ContentType::JSON, String::from("{\"error)error_code\": \"501\", \"error\": \"Not Implemented\"}")));
     }else{
@@ -313,10 +313,10 @@ async fn authenticate(conn: UsersDBConnection, input: Json<AuthenticationRequest
     }
 }
 
-#[post("/test?<access_token>&<client_id>&<user_id>", rank = 1)]
-async fn test_endpoint(conn: UsersDBConnection, access_token: String, client_id: String, user_id: String) -> (Status, (ContentType, String)){
+#[post("/test", format = "json", data = "<input>", rank = 1)]
+async fn test_endpoint(conn: UsersDBConnection, input: Json<TestRequest>) -> (Status, (ContentType, String)){
     let res = conn.run(move |c| {
-        return is_user_authentcated(c, &access_token, &client_id, &user_id);
+        return is_user_authentcated(c, input.access_token.as_ref().unwrap(), input.client_id.as_ref().unwrap(), input.user_id.as_ref().unwrap());
     }).await;
 
     return (Status::from_code(res.0).unwrap(), (ContentType::JSON, res.1));
