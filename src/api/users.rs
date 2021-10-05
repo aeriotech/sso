@@ -30,7 +30,9 @@ const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 const ACCESS_TOKEN_LENGTH: usize = 128;
 
 //Duration in seconds (one month)
-const ACCESS_TOKEN_DURATION: u64 = 60*60*24*30;
+//const ACCESS_TOKEN_DURATION: u64 = 60*60*24*30;
+//Test duration (10s)
+const ACCESS_TOKEN_DURATION: u64 = 120;
 
 #[database("users_db")]
 struct UsersDBConnection(postgres::Client);
@@ -51,6 +53,7 @@ struct AuthenticationRequest{
     client_secret: Option<String>,
     scope: Option<String>,
     response_type: Option<String>,
+    refresh_token: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, FromForm)]
@@ -130,80 +133,144 @@ fn user_by_name_exists(conn: &mut postgres::Client, input: &String) -> u8{
 
 fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest) -> AuthenticationResponse{
     let username: &String = request.username.as_ref().unwrap();
-    let password_in: &String = request.password.as_ref().unwrap();
-
-    let user_info = conn.query_one("SELECT password, id FROM users WHERE username=$1", &[username]);
-
-    if user_info.is_err() {
-        return AuthenticationResponse{
-            access_token: None,
-            refresh_token: None,
-            expiration: None,
-            success: false,
-            status_code: Some(401),
-            error: Some(String::from("401; invalid credentials")),
-        };
-    }
-
-    let user_info_raw = user_info.unwrap();
-
-    let password: String = user_info_raw.get(0);
-    let user_id: String = user_info_raw.get(1);
-
+    let response_type: &String = request.response_type.as_ref().unwrap();
     let client_id: &String = request.client_id.as_ref().unwrap();
+    let access_token: String = random_bytes();
 
-    let client_info = conn.query_one("SELECT client_secret FROM clients WHERE client_id = $1", &[client_id]);
-    if client_info.is_err() {
-        return AuthenticationResponse{
-            access_token: None,
-            refresh_token: None,
-            expiration: None,
-            success: false,
-            status_code: Some(500),
-            error: Some(String::from("500; internal server error")),
-        };
-    }
+    if response_type == "code"{
+        let password_in: &String = request.password.as_ref().unwrap();
 
-    let client_secret: String = client_info.unwrap().get(0);
-    let client_secret_in: &String = request.client_secret.as_ref().unwrap();
-    if &client_secret != client_secret_in{
-        return AuthenticationResponse{
-            access_token: None,
-            refresh_token: None,
-            expiration: None,
-            success: false,
-            status_code: Some(401),
-            error: Some(String::from("401; invalid credentials")),
-        };
-    }
+        let user_info = conn.query_one("SELECT password, id FROM users WHERE username=$1", &[username]);
 
-    if argon2::verify_encoded(&password, &password_in.as_bytes()).unwrap() { 
-        let access_token: String = random_bytes();
-        let refresh_token: String = random_bytes();
+        if user_info.is_err() {
+            return AuthenticationResponse{
+                access_token: None,
+                refresh_token: None,
+                expiration: None,
+                success: false,
+                status_code: Some(401),
+                error: Some(String::from("401; invalid credentials")),
+            };
+        }
+
+        let user_info_raw = user_info.unwrap();
+
+        let password: String = user_info_raw.get(0);
+        let user_id: String = user_info_raw.get(1);
+
+        let client_info = conn.query_one("SELECT client_secret FROM clients WHERE client_id = $1", &[client_id]);
+        if client_info.is_err() {
+            return AuthenticationResponse{
+                access_token: None,
+                refresh_token: None,
+                expiration: None,
+                success: false,
+                status_code: Some(500),
+                error: Some(String::from("500; internal server error")),
+            };
+        }
+
+        let client_secret: String = client_info.unwrap().get(0);
+        let client_secret_in: &String = request.client_secret.as_ref().unwrap();
+        if &client_secret != client_secret_in{
+            return AuthenticationResponse{
+                access_token: None,
+                refresh_token: None,
+                expiration: None,
+                success: false,
+                status_code: Some(401),
+                error: Some(String::from("401; invalid credentials")),
+            };
+        }
+
+        if argon2::verify_encoded(&password, &password_in.as_bytes()).unwrap() { 
+            let start = SystemTime::now();
+            let since_the_epoch = start
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards");        
+        
+            let refresh_token: String = random_bytes();
+
+            let seconds_since: String = (since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION).to_string();
+            // !TODO: Query parameters don't work inside DO statements. Maybe try temporary variales https://stackoverflow.com/questions/18811265/sql-creating-temporary-variables
+            
+            let query: &String = &(String::from("DO
+            $do$
+            BEGIN
+            IF EXISTS (SELECT FROM tokens WHERE user_id='") + &user_id + &String::from("' AND client_id='") + client_id + &String::from("') THEN
+            UPDATE tokens SET access_token='") + &access_token + &String::from("', access_token_expire='") + &seconds_since + &String::from("' WHERE user_id='") +
+            &user_id + &String::from("' AND client_id='") + client_id + &String::from("';
+            ELSE
+            INSERT INTO tokens (user_id, client_id, access_token, access_token_expire, refresh_token) VALUES ('") + &user_id + &String::from("', '") + client_id + &String::from("', '") + &access_token + &String::from("', '") + &seconds_since + &String::from("', '") + &refresh_token + &String::from("');
+            END IF;
+            END
+            $do$"));
+            
+            let rows_updated = conn.execute(query.as_str(), &[]);
+
+            if rows_updated.is_err() {
+                return AuthenticationResponse{
+                    access_token: None,
+                    refresh_token: None,
+                    expiration: None,
+                    success: false,
+                    status_code: Some(500),
+                    error: Some(String::from("500; internal server error")),
+                };
+            }
+
+            return AuthenticationResponse{
+                access_token: Some(access_token),
+                refresh_token: Some(refresh_token),
+                expiration: Some(since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION),
+                error: None,
+                status_code: Some(201),
+                success: true,
+            };
+        }else{ 
+            return AuthenticationResponse{
+                access_token: None,
+                refresh_token: None,
+                expiration: None,
+                success: false,
+                status_code: Some(401),
+                error: Some(String::from("401; invalid credentials")),
+            };
+        }
+    }else if response_type == "refresh" {
+        println!("Access Token refresh");
+        let user_info = conn.query_one("SELECT id FROM users WHERE username=$1;", &[username]);
+
+        if user_info.is_err() {
+            let a = user_info.unwrap();
+            return AuthenticationResponse{
+                access_token: None,
+                refresh_token: None,
+                expiration: None,
+                success: false,
+                status_code: Some(401),
+                error: Some(String::from("401; invalid credentials")),
+            };
+        }
+
+        let user_info_raw = user_info.unwrap();
+
+        let user_id: String = user_info_raw.get(0);
+
 
         let start = SystemTime::now();
         let since_the_epoch = start
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards");
-        let seconds_since: String = (since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION).to_string();
 
-        // !TODO: Query parameters don't work inside DO statements. Maybe try temporary variales https://stackoverflow.com/questions/18811265/sql-creating-temporary-variables
-        
-        let query: &String = &(String::from("DO
-        $do$
-        BEGIN
-           IF EXISTS (SELECT FROM tokens WHERE user_id='") + &user_id + &String::from("' AND client_id='") + client_id + &String::from("') THEN
-           UPDATE tokens SET access_token='") + &access_token + &String::from("', access_token_expire='") + &seconds_since + &String::from("' WHERE user_id='") +
-        &user_id + &String::from("' AND client_id='") + client_id + &String::from("';
-        ELSE
-           INSERT INTO tokens VALUES ('") + &user_id + &String::from("', '") + client_id + &String::from("', '") + &access_token + &String::from("', '") + &seconds_since + &String::from("', '") + &refresh_token + &String::from("');
-           END IF;
-        END
-        $do$"));
-        
-        let rows_updated = conn.execute(query.as_str(), &[]);
+        let mut timestamp: i64 = 0;
+        timestamp = timestamp.wrapping_add((since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION) as i64);
 
-        if rows_updated.is_err() {
+        let refresh_token: String = request.refresh_token.as_ref().unwrap().clone();
+        let access_token_req = conn.execute("UPDATE tokens SET access_token = $1, access_token_expire = $5 WHERE client_id=$2 AND user_id=$3 AND refresh_token = $4;",
+        &[&access_token, client_id, &user_id, &refresh_token, &timestamp]);
+
+        if access_token_req.is_err() {
             return AuthenticationResponse{
                 access_token: None,
                 refresh_token: None,
@@ -222,14 +289,14 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
             status_code: Some(201),
             success: true,
         };
-    }else{ 
+    }else{
         return AuthenticationResponse{
             access_token: None,
             refresh_token: None,
             expiration: None,
             success: false,
-            status_code: Some(401),
-            error: Some(String::from("401; invalid credentials")),
+            status_code: Some(400),
+            error: Some(String::from("400; invalid response type")),
         };
     }
 }
@@ -288,29 +355,21 @@ async fn new_form(conn: UsersDBConnection, input: Form<UserIn>) -> Redirect {
 #[post("/authenticate", format = "json", data = "<input>", rank = 1)]
 async fn authenticate(conn: UsersDBConnection, input: Json<AuthenticationRequest>) -> (Status, (ContentType, String)) {
     let req = input.into_inner();
-    if req.username.is_none() || req.password.is_none() {
-        return (Status::Unauthorized, (ContentType::JSON, String::from("{\"errorCode\": 401, \"message\": \"invalid credentials\"}")));
-    }
     
     if req.response_type.is_none(){
         return (Status::BadRequest, (ContentType::JSON, String::from("{\"errorCode\": 400, \"message\": \"invalid request type\"}")));
     }
 
-    let req_clone: AuthenticationRequest = req.clone();
-    let response_type = req.response_type.unwrap();
-    if response_type == "code"{
-        let req_clone_v2 = req_clone.clone();
-        let res = conn.run(move |c| {
-            return get_access_token(c, &req_clone_v2);
-        }).await;
-
-        let res_json: String = rocket::serde::json::serde_json::to_string_pretty(&res).unwrap();
-        return (Status::from_code(res.status_code.unwrap()).unwrap(), (ContentType::JSON, res_json));
-    }else if response_type == "refresh"{
-        return (Status::NotImplemented, (ContentType::JSON, String::from("{\"error)error_code\": \"501\", \"error\": \"Not Implemented\"}")));
-    }else{
-        return (Status::BadRequest, (ContentType::JSON, String::from("{\"errorCode\": 400, \"message\": \"invalid request type\"}")));
+    if req.username.is_none() {
+        return (Status::Unauthorized, (ContentType::JSON, String::from("{\"errorCode\": 401, \"message\": \"invalid credentials\"}")));
     }
+    
+    let res = conn.run(move |c| {
+        return get_access_token(c, &req);
+    }).await;
+
+    let res_json: String = rocket::serde::json::serde_json::to_string_pretty(&res).unwrap();
+    return (Status::from_code(res.status_code.unwrap()).unwrap(), (ContentType::JSON, res_json));
 }
 
 #[post("/test", format = "json", data = "<input>", rank = 1)]
