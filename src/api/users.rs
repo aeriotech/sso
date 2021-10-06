@@ -30,9 +30,7 @@ const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
 const ACCESS_TOKEN_LENGTH: usize = 128;
 
 //Duration in seconds (one month)
-//const ACCESS_TOKEN_DURATION: u64 = 60*60*24*30;
-//Test duration (10s)
-const ACCESS_TOKEN_DURATION: u64 = 120;
+const ACCESS_TOKEN_DURATION: u64 = 60*60*24*30;
 
 #[database("users_db")]
 struct UsersDBConnection(postgres::Client);
@@ -242,7 +240,6 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
         let user_info = conn.query_one("SELECT id FROM users WHERE username=$1;", &[username]);
 
         if user_info.is_err() {
-            let a = user_info.unwrap();
             return AuthenticationResponse{
                 access_token: None,
                 refresh_token: None,
