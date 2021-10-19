@@ -4,22 +4,214 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <link rel="stylesheet" type="text/css" href="static/stylesheet.css">
+    <link rel="stylesheet" type="text/css" href="static/checkboxes.css">
+    <title>Aerio register</title>
 </head>
 <body>
-    <h1>Register</h1>
+    <noscript><p style="text-align: center; font-size: 30px;">This website requires JavaScript</p></noscript>
+    <header>
+        <div class="left">
+            <img src="static/img/aerio_logo.webp" width="64px">
+        </div>
+        <div class="right">
+            <p style="padding-top: 0; padding-bottom: 0; margin: 0;">Dark mode</p>
+            <label class="switch">
+                <input type="checkbox" onclick="toggleTheme()" id="darkModeSwitch">
+                <span class="slider round"></span>
+            </label>
+        </div>
+    </header>
+    <div class="container">
+        <h1>Register</h1>
 
-    {{#if message}}
-        <p>{{#if kind}}{{kind}}: {{/if}}{{ message }}</p>
-    {{/if}}
-
-    <form method="POST" action="api/users/new" accept-charset="UTF-8" enctype="application/x-www-form-urlencoded">
         <label for="username">Username</label>
-        <input type="text" name="username" id="username" value="">
-        <label for="password">Password</label>
-        <input type="password" name="password" id="password" value="">
+        <br>
+        <input class="field" type="text" name="username" id="username" placeholder="Username">
+        <br>
 
-        <p><input type="submit" value="Register"></p>
-    </form>
+        <label for="email">Email</label>
+        <br>
+        <input class="field" type="text" name="email" id="email" placeholder="Email">
+        <p class="error" style="font-size: small; margin-top: 0;" id="emailCheck">*Invalid email</p>
+        <br>
+
+        <label for="password">Password</label>
+        <br>
+        <input class="field" type="password" name="password" id="password" placeholder="Password">
+        <div id="passwordStrength">
+            <div id="strengthBar"></div>
+        </div>
+        <p id="strengthText"></p>
+        <br>
+
+        <label for="passwordRepeat">Repeat password</label>
+        <br>
+        <input class="field" type="password" name="passwordRepeat" id="passwordRepeat" placeholder="Repeat password">
+        <p class="error" style="font-size: small; margin-top: 0;" id="repeatCheck">*Passwords don't match</p>
+        <br>
+
+        <button class="submit" onclick="register()">Register</button>
+
+        <p>Already have an account? <a id="login_redirect" href="#">Login</a></p>
+
+        <div class="loader" id="loader"></div>
+        
+        <p id="error"></p>
+    </div>
+
+    <script src="static/theme_toggle.js"></script>
+
+    <script>
+        //https://stackoverflow.com/a/11268104/
+        function scorePassword(pass) {
+            let score = 0;
+            if (!pass)
+                return score;
+
+            // award every unique letter until 5 repetitions
+            const letters = {};
+            for (let i=0; i<pass.length; i++) {
+                letters[pass[i]] = (letters[pass[i]] || 0) + 1;
+                score += 5.0 / letters[pass[i]];
+            }
+
+            // bonus points for mixing it up
+            const variations = {
+                digits: /\d/.test(pass),
+                lower: /[a-z]/.test(pass),
+                upper: /[A-Z]/.test(pass),
+                nonWords: /\W/.test(pass),
+            };
+
+            let variationCount = 0;
+            for (var check in variations) {
+                variationCount += (variations[check] === true) ? 1 : 0;
+            }
+            score += (variationCount - 1) * 10;
+
+            return score;
+        }
+
+        const passwordBar = document.getElementById("strengthBar");
+        const passwordText = document.getElementById("strengthText");
+        const password = document.getElementById("password");
+        const repeatCheck = document.getElementById("repeatCheck");
+        repeatCheck.style.display = "none";
+        const passwordRepeat = document.getElementById("passwordRepeat");
+
+        const username = document.getElementById("username");
+        const email = document.getElementById("email");
+        const errorField = document.getElementById("error");
+        const emailRegex = /\S+@\S+\.\S+/;
+        const emailCheck = document.getElementById("emailCheck");
+        emailCheck.style.display = "none";
+
+        const loader = document.getElementById("loader");
+        loader.style.display = "none";
+
+        //Data passed from server
+        const redirect_uri = decodeURIComponent("{{redirect_uri}}");
+        document.getElementById("login_redirect").href = redirect_uri;
+
+        function passwordsEqual(){
+            return password.value === passwordRepeat.value;
+        }
+
+        //Password strength colors
+        const passwordWeak = "#e00101";
+        const passwordGood = "#a4e001";
+        const passwordStrong = "#00db12";
+
+        password.onkeyup = function(e) {
+            let score = scorePassword(password.value);
+            if(score > 75){
+                passwordText.innerText = "Strong";
+                passwordBar.style.backgroundColor = passwordStrong;
+            }else if(score > 55){
+                passwordText.innerText = "Good";
+                passwordBar.style.backgroundColor = passwordGood;
+            }else{
+                passwordText.innerText = "Weak";
+                passwordBar.style.backgroundColor = passwordWeak;
+            }
+            let w = Math.min((score/120.0)*100.0, 100.0);
+            passwordBar.style.width = w + "%";
+        };
+
+        email.onkeyup = function (e) {
+            if (email.value.trim() === "" || emailRegex.test(email.value)) {
+                emailCheck.style.display = "none";
+            }else{
+                emailCheck.style.display = "block";
+            }
+        };
+
+        passwordRepeat.onkeyup = function(e) {
+            if(passwordsEqual()){
+                repeatCheck.style.display = "none";
+            }else{
+                repeatCheck.style.display = "block";
+            }
+        }
+
+        async function postData(url = '', data = {}) {
+            // Default options are marked with *
+            const response = await fetch(url, {
+                method: 'POST', // *GET, POST, PUT, DELETE, etc.
+                mode: 'cors', // no-cors, *cors, same-origin
+                cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
+                credentials: 'same-origin', // include, *same-origin, omit
+                headers: {
+                'Content-Type': 'application/json'
+                // 'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                redirect: 'follow', // manual, *follow, error
+                referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+                body: JSON.stringify(data) // body data type must match "Content-Type" header
+            });
+            return response.json(); // parses JSON response into native JavaScript objects
+        }
+
+        function username_taken(username){
+            return fetch("api/users/username_taken?username=" + encodeURIComponent(username)).then(data => {
+                return data.json();
+            });
+        }
+
+        function register(){
+            if (username.value.trim() === "" || password.value.trim() === "" || email.value.trim() === "") {
+                errorField.innerText = "Please fill in all fields";
+                return;
+            }
+            loader.style.display = "block";
+            if(passwordsEqual()){
+                username_taken(username.value).then(data => {
+                    if(!data.success){
+                        errorField.innerText = data.error;
+                        loader.style.display = "none";
+                    }else{
+                        if(data.taken){
+                            errorField.innerText = "Username taken";
+                            loader.style.display = "none";
+                        }else{
+                            postData("api/users/new", {username: username.value, password: password.value, email: email.value})
+                                .then(data => {
+                                    if(data.success){
+                                        window.location.replace(redirect_uri);
+                                    }else{
+                                        errorField.innerText = data.error;
+                                    }
+                                    loader.style.display = "none";
+                                });
+                        }
+                    }
+                });
+            }else{
+                repeatCheck.style.display = "block";
+                loader.style.display = "none";
+            }
+        }
+    </script>
 </body>
 </html>

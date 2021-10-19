@@ -4,22 +4,102 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <link rel="stylesheet" type="text/css" href="static/stylesheet.css">
+    <link rel="stylesheet" type="text/css" href="static/checkboxes.css">
+    <title>Aerio login</title>
 </head>
 <body>
-    <h1>Login</h1>
-
-    {{#if message}}
-        <p>{{#if kind}}{{kind}}: {{/if}}{{ message }}</p>
-    {{/if}}
-
-    <form method="POST" action="api/users/login" accept-charset="UTF-8" enctype="application/x-www-form-urlencoded">
+    <noscript><p style="text-align: center; font-size: 30px;">This website requires JavaScript</p></noscript>
+    <header>
+        <div class="left">
+            <img src="static/img/aerio_logo.webp" width="64px">
+        </div>
+        <div class="right">
+            <p style="padding-top: 0; padding-bottom: 0; margin: 0;">Dark mode</p>
+            <label class="switch">
+                <input type="checkbox" onclick="toggleTheme()" id="darkModeSwitch">
+                <span class="slider round"></span>
+            </label>
+        </div>
+    </header>
+    <div class="container">
+        <h1>Login</h1>
         <label for="username">Username</label>
-        <input type="text" name="username" id="username" value="">
+        <br>
+        <input class="field" type="text" name="username" id="username" placeholder="Username">
+        <br>
+        <br>
         <label for="password">Password</label>
-        <input type="password" name="password" id="password" value="">
+        <br>
+        <input class="field" type="password" name="password" id="password" placeholder="Password">
+        <br>
+        <button class="submit" onclick="login()">Login</button>
+        <p>Don't have an account yet? <a onclick="register()">Register</a></p>
+        <div class="loader" id="loader"></div>
+        <p class="error" id="error"></p>
+    </div>
 
-        <p><input type="submit" value="Login"></p>
-    </form>
+    <script src="static/theme_toggle.js"></script>
+
+    <script>
+        const errorField = document.getElementById("error");
+        const usernameField = document.getElementById("username");
+        const passwordField = document.getElementById("password");
+        const loader = document.getElementById("loader");
+        loader.style.display = "none";
+        //Data passed from server
+        let client_id = decodeURIComponent('{{client_id}}');
+        let scope = decodeURIComponent('{{scope}}');
+        let redirect_uri = decodeURIComponent('{{redirect_uri}}');
+
+        async function postData(url = '', data = {}) {
+            // Default options are marked with *
+            const response = await fetch(url, {
+                method: 'POST', // *GET, POST, PUT, DELETE, etc.
+                mode: 'cors', // no-cors, *cors, same-origin
+                cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
+                credentials: 'same-origin', // include, *same-origin, omit
+                headers: {
+                'Content-Type': 'application/json'
+                // 'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                redirect: 'follow', // manual, *follow, error
+                referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+                body: JSON.stringify(data) // body data type must match "Content-Type" header
+            });
+            return response.json(); // parses JSON response into native JavaScript objects
+        }
+
+        function login(){
+            if (usernameField.value.trim() === "" || passwordField.value.trim() === ""){
+                errorField.innerText = "Please enter a username and password";
+                return;
+            }
+            loader.style.display = "block";
+            postData("api/users/authenticate", {username: usernameField.value, password: passwordField.value, client_id: client_id, scope: scope, response_type: "code"})
+                .then(data => {
+                    console.log(data);
+                    if(!data.success) {
+                        errorField.innerText = data.error;
+                    }else{
+                        let redirect_uri_all = redirect_uri;
+                        if(redirect_uri.includes("?")){
+                            redirect_uri_all += "&";
+                        }else{
+                            redirect_uri_all += "?";
+                        }
+                        redirect_uri_all += "access_token=" + encodeURIComponent(data.access_token) + "&refresh_token=" + encodeURIComponent(data.refresh_token)
+                                + "&expiration=" + data.expiration + "&user_id=" + encodeURIComponent(data.user_id);
+                        console.log(redirect_uri_all);
+                        window.location.replace(redirect_uri_all);
+                    }
+                    loader.style.display = "none";
+                });
+        }
+
+        function register(){
+            window.location.replace("/register?redirect_uri=" + encodeURIComponent(window.location.href));
+        }
+    </script>
 </body>
 </html>

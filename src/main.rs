@@ -1,5 +1,7 @@
 #[macro_use] extern crate rocket;
 
+use rocket::fs::FileServer;
+
 mod api;
 mod frontend;
 
@@ -8,4 +10,5 @@ fn rocket() -> _ {
     rocket::build()
         .attach(api::stage())
         .attach(frontend::stage())
+        .mount("/static", FileServer::from("static/"))
 }
