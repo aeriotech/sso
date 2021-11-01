@@ -10,6 +10,7 @@
     --link-color: rgb(0, 102, 204);
     --loading-color: #3498db;
     --loading-bg-color: #f3f3f3;
+    --error-dark-color: #000000;
 }
 
 :root[data-theme="theme-dark"] {
@@ -24,6 +25,7 @@
     --link-color: rgb(0, 174, 255);
     --loading-color: #0068ad;
     --loading-bg-color: #585858;
+    --error-dark-color: #ffffff;
 }
 
 .container  {
@@ -127,6 +129,15 @@ a {
     color: red;
 }
 
+.error-center {
+    color: var(--error-dark-color);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
 .loader {
     border: 8px solid var(--loading-bg-color);
     border-top: 8px solid var(--loading-color);
@@ -139,7 +150,7 @@ a {
     margin-left: auto;
     margin-right: auto;
   }
-  
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -152,7 +163,7 @@ a {
     background-color: grey;
     border-radius: 5px;
   }
-  
+
 #strengthBar {
     border-radius: 5px;
     width: 0;

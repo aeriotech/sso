@@ -5,8 +5,24 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Error</title>
+    <link rel="stylesheet" type="text/css" href="static/stylesheet.css">
+    <link rel="stylesheet" type="text/css" href="static/checkboxes.css">
 </head>
-<body style="background-color: gray">
-    <p style="color: red;">{{error}}</p>
+<body>
+<header>
+    <div class="left">
+        <img src="static/img/aerio_logo.webp" width="64px">
+    </div>
+    <div class="right">
+        <p style="padding-top: 0; padding-bottom: 0; margin: 0;">Dark mode</p>
+        <label class="switch">
+            <input type="checkbox" onclick="toggleTheme()" id="darkModeSwitch">
+            <span class="slider round"></span>
+        </label>
+    </div>
+</header>
+    <h1 class="error-center">{{error}}</h1>
+
+    <script src="static/theme_toggle.js"></script>
 </body>
 </html>

@@ -1,16 +1,15 @@
-use std::vec::Vec;
 use std::str;
 use rocket::serde::json::{Json};
 use rocket::serde::{Serialize, Deserialize};
-use rocket::form::Form;
-use rocket::response::Redirect;
 use argon2::{self, Config, ThreadMode, Variant, Version};
 use rand::Rng;
 use rocket::http::{Status, ContentType};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::clone::Clone;
 
-use rocket_sync_db_pools::{database, postgres};
+use rocket_sync_db_pools::postgres;
+
+use super::super::db::UsersDBConnection;
 
 const ARGON_CONFIG: Config = Config {
     variant: Variant::Argon2id,
@@ -32,9 +31,6 @@ const ACCESS_TOKEN_LENGTH: usize = 128;
 //Duration in seconds (one month)
 const ACCESS_TOKEN_DURATION: u64 = 60*60*24*30;
 
-#[database("users_db")]
-struct UsersDBConnection(postgres::Client);
-
 #[derive(Serialize, Deserialize, FromForm)]
 #[serde(crate = "rocket::serde")]
 struct UserIn{
@@ -49,7 +45,7 @@ struct AuthenticationRequest{
     username: Option<String>,
     password: Option<String>,
     client_id: Option<String>,
-    scope: Option<String>,
+    scope: u64,
     response_type: Option<String>,
     refresh_token: Option<String>,
 }
@@ -60,6 +56,8 @@ struct AuthenticationResponse{
     access_token: Option<String>,
     refresh_token: Option<String>,
     user_id: Option<String>,
+    client_name: Option<String>,
+    internal: bool,
     expiration: Option<u64>,
     status_code: Option<u16>,
     error: Option<String>,
@@ -146,6 +144,27 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
     let client_id: &String = request.client_id.as_ref().unwrap();
     let access_token: String = random_bytes();
 
+    let client_info = conn.query_one("SELECT client_name, internal FROM clients WHERE client_id=$1", &[client_id]);
+
+    if client_info.is_err() {
+        return AuthenticationResponse{
+            access_token: None,
+            refresh_token: None,
+            expiration: None,
+            user_id: None,
+            client_name: None,
+            internal: false,
+            success: false,
+            status_code: Some(401),
+            error: Some(String::from("401; invalid credentials")),
+        };
+    }
+
+    let client_info_raw = client_info.unwrap();
+
+    let client_name: String = client_info_raw.get(0);
+    let internal: bool = client_info_raw.get(1);
+
     if response_type == "code"{
         let password_in: &String = request.password.as_ref().unwrap();
 
@@ -157,6 +176,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                 refresh_token: None,
                 expiration: None,
                 user_id: None,
+                client_name: None,
+                internal: false,
                 success: false,
                 status_code: Some(401),
                 error: Some(String::from("401; invalid credentials")),
@@ -198,6 +219,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                     refresh_token: None,
                     user_id: None,
                     expiration: None,
+                    client_name: None,
+                    internal: false,
                     success: false,
                     status_code: Some(500),
                     error: Some(String::from("500; internal server error")),
@@ -209,6 +232,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                 refresh_token: Some(refresh_token),
                 expiration: Some(since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION),
                 user_id: Some(user_id),
+                client_name: Some(client_name),
+                internal,
                 error: None,
                 status_code: Some(201),
                 success: true,
@@ -219,6 +244,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                 refresh_token: None,
                 expiration: None,
                 user_id: None,
+                client_name: None,
+                internal: false,
                 success: false,
                 status_code: Some(401),
                 error: Some(String::from("401; invalid credentials")),
@@ -234,6 +261,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                 refresh_token: None,
                 expiration: None,
                 user_id: None,
+                client_name: None,
+                internal: false,
                 success: false,
                 status_code: Some(401),
                 error: Some(String::from("401; invalid credentials")),
@@ -263,6 +292,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
                 refresh_token: None,
                 expiration: None,
                 user_id: None,
+                client_name: None,
+                internal: false,
                 success: false,
                 status_code: Some(500),
                 error: Some(String::from("500; internal server error")),
@@ -274,6 +305,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
             refresh_token: Some(refresh_token),
             expiration: Some(since_the_epoch.as_secs() + ACCESS_TOKEN_DURATION),
             user_id: Some(user_id),
+            client_name: Some(client_name),
+            internal,
             error: None,
             status_code: Some(201),
             success: true,
@@ -284,6 +317,8 @@ fn get_access_token(conn: &mut postgres::Client, request: &AuthenticationRequest
             refresh_token: None,
             expiration: None,
             user_id: None,
+            client_name: None,
+            internal: false,
             success: false,
             status_code: Some(400),
             error: Some(String::from("400; invalid response type")),
@@ -363,17 +398,17 @@ async fn username_taken_endpoint(conn: UsersDBConnection, username: String) -> (
         return user_by_name_exists(c, &username);
     }).await;
 
-    if res==0 {
-        return (Status::Ok, (ContentType::JSON, String::from("{\"success\": true, \"status_code\": 200, \"error\": null, \"taken\": false}")));
-    }else if res==1 {
-        return (Status::Ok, (ContentType::JSON, String::from("{\"success\": true, \"status_code\": 200, \"error\": null, \"taken\": true}")));
-    }else {
-        return (Status::InternalServerError, (ContentType::JSON, String::from("{\"success\": false, \"status_code\": 500, \"error\": \"internal server error\"}")));
+    return if res == 0 {
+        (Status::Ok, (ContentType::JSON, String::from("{\"success\": true, \"status_code\": 200, \"error\": null, \"taken\": false}")))
+    } else if res == 1 {
+        (Status::Ok, (ContentType::JSON, String::from("{\"success\": true, \"status_code\": 200, \"error\": null, \"taken\": true}")))
+    } else {
+        (Status::InternalServerError, (ContentType::JSON, String::from("{\"success\": false, \"status_code\": 500, \"error\": \"internal server error\"}")))
     }
 }
 
 pub fn stage() -> rocket::fairing::AdHoc {
     rocket::fairing::AdHoc::on_ignite("Users", |rocket| async {
-        rocket.mount("/api/users", routes![new, authenticate, test_endpoint, username_taken_endpoint]).attach(UsersDBConnection::fairing())
+        rocket.mount("/api/users", routes![new, authenticate, test_endpoint, username_taken_endpoint])
     })
 }

@@ -24,6 +24,13 @@
     </header>
     <div class="container">
         <h1>Login</h1>
+        <p style="text-align: left;">The application <b>{{client_name}}</b> will have access to:</p>
+        <ul style="text-align: left;">
+            {{#each scope}}
+                <li>{{this}}</li>
+            {{/each}}
+        </ul>
+        <br>
         <label for="username">Username</label>
         <br>
         <input class="field" type="text" name="username" id="username" placeholder="Username">
@@ -48,9 +55,8 @@
         const loader = document.getElementById("loader");
         loader.style.display = "none";
         //Data passed from server
-        let client_id = decodeURIComponent('{{client_id}}');
-        let scope = decodeURIComponent('{{scope}}');
-        let redirect_uri = decodeURIComponent('{{redirect_uri}}');
+        let client_id = '{{{client_id}}}';
+        let redirect_uri = '{{{redirect_uri}}}';
 
         async function postData(url = '', data = {}) {
             // Default options are marked with *
@@ -76,7 +82,7 @@
                 return;
             }
             loader.style.display = "block";
-            postData("api/users/authenticate", {username: usernameField.value, password: passwordField.value, client_id: client_id, scope: scope, response_type: "code"})
+            postData("api/users/authenticate", {username: usernameField.value, password: passwordField.value, client_id: client_id, scope: {{{scope_num}}}, response_type: "code"})
                 .then(data => {
                     console.log(data);
                     if(!data.success) {
@@ -90,7 +96,6 @@
                         }
                         redirect_uri_all += "access_token=" + encodeURIComponent(data.access_token) + "&refresh_token=" + encodeURIComponent(data.refresh_token)
                                 + "&expiration=" + data.expiration + "&user_id=" + encodeURIComponent(data.user_id);
-                        console.log(redirect_uri_all);
                         window.location.replace(redirect_uri_all);
                     }
                     loader.style.display = "none";
