@@ -111,7 +111,7 @@
         loader.style.display = "none";
 
         //Data passed from server
-        const redirect_uri = decodeURIComponent("{{redirect_uri}}");
+        const redirect_uri = "{{{redirect_uri}}}";
         document.getElementById("login_redirect").href = redirect_uri;
 
         function passwordsEqual(){

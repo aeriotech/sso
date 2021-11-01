@@ -1,6 +1,6 @@
 const darkModeSwitch = document.getElementById("darkModeSwitch");
 
-let isDark = false;
+let isDark = true;
 if(localStorage.getItem("dark") === null){
     isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
 }else{
