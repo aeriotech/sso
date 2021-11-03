@@ -10,8 +10,6 @@ fn register(redirect_uri: String) -> Template {
     return Template::render("register", context);
 }
 
-pub fn stage() -> rocket::fairing::AdHoc {
-    rocket::fairing::AdHoc::on_ignite("Register", |rocket| async {
-        rocket.mount("/register", routes![register])
-    })
+pub fn stage() -> Vec<rocket::Route> {
+    routes![register]
 }

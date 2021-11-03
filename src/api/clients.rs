@@ -76,8 +76,6 @@ async fn get(conn: UsersDBConnection, client_id: String) -> (Status, (ContentTyp
     return (Status::from_code(res.status_code.unwrap()).unwrap(), (ContentType::JSON, res_json));
 }
 
-pub fn stage() -> rocket::fairing::AdHoc {
-    rocket::fairing::AdHoc::on_ignite("Clients", |rocket| async {
-        rocket.mount("/api/clients", routes![get])
-    })
+pub fn stage() -> Vec<rocket::Route> {
+    routes![get]
 }

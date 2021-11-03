@@ -407,8 +407,6 @@ async fn username_taken_endpoint(conn: UsersDBConnection, username: String) -> (
     }
 }
 
-pub fn stage() -> rocket::fairing::AdHoc {
-    rocket::fairing::AdHoc::on_ignite("Users", |rocket| async {
-        rocket.mount("/api/users", routes![new, authenticate, test_endpoint, username_taken_endpoint])
-    })
+pub fn stage() -> Vec<rocket::Route> {
+    routes![new, authenticate, token_valid, username_taken_endpoint]
 }

@@ -44,8 +44,6 @@ async fn login_invalid_scope(client_id: String, scope: String, redirect_uri: Str
     return Template::render("error", context);
 }
 
-pub fn stage() -> rocket::fairing::AdHoc {
-    rocket::fairing::AdHoc::on_ignite("Login", |rocket| async {
-        rocket.mount("/login", routes![login, login_invalid_scope])
-    })
+pub fn stage() -> Vec<rocket::Route> {
+    routes![login, login_invalid_scope]
 }
