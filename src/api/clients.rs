@@ -1,7 +1,7 @@
 use rocket::http::{Status, ContentType};
 use rocket_sync_db_pools::postgres;
 use rocket::serde::{Serialize, Deserialize};
-use super::super::db::UsersDBConnection;
+use crate::db::UsersDBConnection;
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]

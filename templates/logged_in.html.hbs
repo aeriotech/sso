@@ -31,19 +31,14 @@
             {{/each}}
         </ul>
         <br>
-        <label for="username">Username</label>
-        <br>
-        <input class="field" type="text" name="username" id="username" placeholder="Username">
-        <br>
-        <br>
-        <label for="password">Password</label>
-        <br>
-        <input class="field" type="password" name="password" id="password" placeholder="Password">
-        <br>
-        <input type="checkbox" class="checkbox" id="rememberSwitch"> Remember me
+        <div class="container-secondary">
+            <p>You are already logged in. Would you like to log in as:</p>
+            <p><b>{{{username}}}</b></p>
+        </div>
         <br>
         <button class="submit" onclick="login()">Login</button>
-        <p>Don't have an account yet? <a onclick="register()">Register</a></p>
+        <br>
+        <p>Not you? Log in with a <a onclick="forget()">different account</a></p>
         <div class="loader" id="loader"></div>
         <p class="error" id="error"></p>
     </div>
@@ -52,14 +47,8 @@
 
     <script>
         const errorField = document.getElementById("error");
-        const usernameField = document.getElementById("username");
-        const passwordField = document.getElementById("password");
         const loader = document.getElementById("loader");
         loader.style.display = "none";
-        const rememberSwitch = document.getElementById("rememberSwitch");
-        //Data passed from server
-        let client_id = '{{{client_id}}}';
-        let redirect_uri = '{{{redirect_uri}}}';
 
         async function postData(url = '', data = {}) {
             // Default options are marked with *
@@ -80,19 +69,15 @@
         }
 
         function login(){
-            if (usernameField.value.trim() === "" || passwordField.value.trim() === ""){
-                errorField.innerText = "Please enter a username and password";
-                return;
-            }
             loader.style.display = "block";
-            postData("api/users/authenticate", {username: usernameField.value, password: passwordField.value, client_id: client_id, scope: {{{scope_num}}}, response_type: "code", remember: rememberSwitch.checked})
+            postData("api/users/authenticate_cookie", {client_id: '{{{client_id}}}', scope: {{{scope_num}}}})
                 .then(data => {
                     console.log(data);
                     if(!data.success) {
                         errorField.innerText = data.error;
                     }else{
-                        let redirect_uri_all = redirect_uri;
-                        if(redirect_uri.includes("?")){
+                        let redirect_uri_all = '{{{redirect_uri}}}';
+                        if('{{{redirect_uri}}}'.includes("?")){
                             redirect_uri_all += "&";
                         }else{
                             redirect_uri_all += "?";
@@ -105,8 +90,10 @@
                 });
         }
 
-        function register(){
-            window.location.replace("/register?redirect_uri=" + encodeURIComponent(window.location.href));
+        function forget(){
+            var searchParams = new URLSearchParams(window.location.search);
+            searchParams.set("forget", true);
+            window.location.search = searchParams.toString();
         }
     </script>
 </body>
