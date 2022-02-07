@@ -1,4 +1,4 @@
-# **Aeiro SSO**
+# **Aerio SSO**
 
 ## **How to use**
 
